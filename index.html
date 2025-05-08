@@ -4,14 +4,11 @@
 <meta charset="utf-8" />
 <title>Houston AADT Slider Demo</title>
 
-<!-- Leaflet map framework -->
-<link
-  rel="stylesheet"
-  href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
-/>
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
-<!-- D3 for bullet-proof CSV parsing -->
+<!-- D3 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 
 <style>
@@ -46,30 +43,35 @@
     lon:  +d.LONGITUDE,
     aadt: +d.AADT_RPT_QTY
   }));
+
+  /* 3. Pre‑compute helpers */
+  const minAadt = d3.min(rows, d => d.aadt);
+  const maxAadt = d3.max(rows, d => d.aadt);
+  const colour  = d3.scaleSequential([minAadt, maxAadt], d3.interpolateReds);
   const baseTotal = d3.sum(rows, d => d.aadt);
 
-  /* 3. Draw circles + KPI */
+  /* 4. Draw circles + KPI */
   const layer = L.layerGroup().addTo(map);
   function redraw(mult = 1) {
     layer.clearLayers();
     rows.forEach(r => {
       const val = r.aadt * mult;
-      const rad = Math.sqrt(val) / 5;           // visual scale
       L.circleMarker([r.lat, r.lon], {
-        radius: rad,
-        color: '#ff6600',
+        radius: 6,              // fixed size for clarity
+        color:  colour(val),    // colour encodes traffic
         weight: 1,
-        fillOpacity: 0.6
+        fillOpacity: 0.8
       })
       .addTo(layer)
       .bindTooltip(`AADT: ${Math.round(val).toLocaleString()}`);
     });
+
     document.getElementById('kpi').textContent =
       'Total daily vehicles: ' +
       Math.round(baseTotal * mult).toLocaleString();
   }
 
-  /* 4. Slider wiring */
+  /* 5. Slider wiring */
   const slider = document.getElementById('slider');
   slider.addEventListener('input', e => {
     const m = parseFloat(e.target.value);
