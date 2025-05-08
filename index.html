@@ -1,94 +1,83 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <title>Houston Traffic Slider Demo</title>
-  <link rel="stylesheet"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <style>
-    body {margin:0;font-family:sans-serif;}
-    #map {position: absolute; top: 60px; bottom: 0; width: 100%;}
-    #topbar {position:absolute; top:0; left:0; right:0; height:60px;
-             background:#222; color:#fff; display:flex; align-items:center;
-             padding:0 1rem; gap:1rem;}
-    #kpi {font-size:1.2rem; font-weight:bold;}
-  </style>
+<meta charset="utf-8" />
+<title>Houston AADT Slider Demo</title>
+
+<!-- Leaflet map framework -->
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<!-- D3 for bullet-proof CSV parsing -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  #map  { position: absolute; top: 60px; bottom: 0; width: 100%; }
+  #top  { position: absolute; top: 0; left: 0; right: 0; height: 60px;
+          background: #222; color: #fff; display: flex; align-items: center;
+          gap: 1rem; padding: 0 1rem; }
+  #kpi  { font-weight: bold; }
+</style>
 </head>
+
 <body>
-
-<div id="topbar">
-  Traffic multiplier:
-  <input id="slider" type="range" min="0.5" max="1.5" value="1" step="0.1">
-  <span id="factor">1.0×</span> |
-  <span id="kpi">Loading…</span>
-</div>
-<div id="map"></div>
-
-<!-- LIBRARIES -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.27.1/dist/duckdb-browser-eh.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.3/papaparse.min.js"></script>
+  <div id="top">
+    Traffic multiplier:
+    <input id="slider" type="range" min="0.5" max="1.5" step="0.1" value="1" />
+    <span id="factor">1.0×</span> |
+    <span id="kpi">Loading…</span>
+  </div>
+  <div id="map"></div>
 
 <script>
 (async () => {
-  /* 1.  Kick off Leaflet */
-  const map = L.map('map').setView([29.76,-95.37], 10);   // downtown Houston
+  /* 1. Start the map */
+  const map = L.map('map').setView([29.76, -95.37], 10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-              {attribution:'©OSM'}).addTo(map);
+              { attribution: '© OpenStreetMap' }).addTo(map);
 
-  /* 2.  Load the CSV and push into DuckDB */
-  const csvText = await fetch('txdot_counts_hou.csv').then(r=>r.text());
-  const rows = Papa.parse(csvText, {header:true, dynamicTyping:true}).data;
+  /* 2. Load & parse the CSV with D3 */
+  const rows = await d3.csv('txdot_counts_hou.csv', d => ({
+    lat:  +d.LATITUDE,
+    lon:  +d.LONGITUDE,
+    aadt: +d.AADT_RPT_QTY
+  }));
+  const baseTotal = d3.sum(rows, d => d.aadt);
 
-  // spin up DuckDB in the browser
-  const JS = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
-  const db = new duckdb.AsyncDuckDB(jsDelivrBundles=JS);
-  await db.instantiate();
-  const conn = await db.connect();
-  await conn.insertJSON({
-      name:'counts',
-      rows
-  });
-
-  /* 3. Create Leaflet layer */
-  const circles = L.layerGroup().addTo(map);
-  function drawCircles(mult=1){
-    circles.clearLayers();
-    rows.forEach(r=>{
-      const val = r.AADT_RPT_QTY * mult;
-      if(!Number.isFinite(val)) return;
-      const radius = Math.sqrt(val)/5;   // simple scaling
-      const c = L.circleMarker([r.LATITUDE, r.LONGITUDE], {
-        radius,
-        color:'#ff6600',
-        weight:1,
-        fillOpacity:0.6
-      }).bindTooltip(`AADT: ${Math.round(val).toLocaleString()}`);
-      circles.addLayer(c);
+  /* 3. Draw circles + KPI */
+  const layer = L.layerGroup().addTo(map);
+  function redraw(mult = 1) {
+    layer.clearLayers();
+    rows.forEach(r => {
+      const val = r.aadt * mult;
+      const rad = Math.sqrt(val) / 5;           // visual scale
+      L.circleMarker([r.lat, r.lon], {
+        radius: rad,
+        color: '#ff6600',
+        weight: 1,
+        fillOpacity: 0.6
+      })
+      .addTo(layer)
+      .bindTooltip(`AADT: ${Math.round(val).toLocaleString()}`);
     });
-  }
-
-  /* 4. KPI calculator */
-  async function updateKPI(mult=1){
-    const {rows:[{total}]} = await conn.query(`
-      SELECT SUM("AADT") * ${mult} AS total FROM counts
-    `);
     document.getElementById('kpi').textContent =
       'Total daily vehicles: ' +
-       Math.round(total).toLocaleString();
+      Math.round(baseTotal * mult).toLocaleString();
   }
 
-  /* 5.  Hook up the slider */
+  /* 4. Slider wiring */
   const slider = document.getElementById('slider');
-  slider.addEventListener('input', e=>{
-     const mult = parseFloat(e.target.value);
-     document.getElementById('factor').textContent = mult.toFixed(1)+'×';
-     drawCircles(mult);
-     updateKPI(mult);
+  slider.addEventListener('input', e => {
+    const m = parseFloat(e.target.value);
+    document.getElementById('factor').textContent = m.toFixed(1) + '×';
+    redraw(m);
   });
 
-  drawCircles(1);
-  updateKPI(1);
+  redraw(1);                        // first draw
 })();
 </script>
 </body>
