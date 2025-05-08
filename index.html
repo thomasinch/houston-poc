@@ -55,10 +55,10 @@
   function drawCircles(mult=1){
     circles.clearLayers();
     rows.forEach(r=>{
-      const val = r.AADT * mult;
+      const val = r.AADT_RPT_QTY * mult;
       if(!Number.isFinite(val)) return;
       const radius = Math.sqrt(val)/5;   // simple scaling
-      const c = L.circleMarker([r.Lat, r.Lon], {
+      const c = L.circleMarker([r.LATITUDE, r.LONGITUDE], {
         radius,
         color:'#ff6600',
         weight:1,
